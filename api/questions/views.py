@@ -4,7 +4,10 @@ from rest_framework import filters
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
+from like.models import Like
 from question.models import Question
+
+from rest_framework.response import Response
 
 
 # api를 function based view 로 만들건데 Question 모델로 database 에 전체 조회고 이를 시리얼 라이즈 해서 응답으로 내보내는 api 를 만들거야
@@ -31,3 +34,18 @@ class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        user = request.user
+        liked_question = False
+
+        if user.is_authenticated:
+            liked_question = Like.objects.filter(question_id=instance.id, user_id=user.id).exists()
+
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        data['liked_question'] = liked_question
+
+        return Response(data)
