@@ -1,12 +1,15 @@
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics, filters
+from django.db.models import Exists
+from rest_framework import generics
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
 from api.comments.filters import CommentCustomFilter
 from api.comments.serializers import CommentSerializer
+from like.models import Like
 from question.models import Comment, Question
+
+from django.db import transaction
 
 
 class CommentUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
@@ -32,12 +35,17 @@ class CommentListView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
+        with transaction.atomic():
             serializer.save(question_id=question_id)
-        except Exception as e:
-            raise ValidationError({"error": str(e)})
-        else:
             question = Question.objects.get(id=question_id)
             question.count_comment += 1
             question.save()
         return Response(serializer.data, status=201)
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        from django.db.models import OuterRef
+        queryset = queryset.annotate(liked=Exists(Like.objects.filter(user=user, comment=OuterRef('pk'))))
+        return queryset
