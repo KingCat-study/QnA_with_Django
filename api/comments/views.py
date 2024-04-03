@@ -1,6 +1,7 @@
+from django.db import transaction
 from django.db.models import Exists
+from django.db.models import OuterRef
 from rest_framework import generics
-from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -8,8 +9,6 @@ from api.comments.filters import CommentCustomFilter
 from api.comments.serializers import CommentSerializer
 from like.models import Like
 from question.models import Comment, Question
-
-from django.db import transaction
 
 
 class CommentUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
@@ -46,6 +45,5 @@ class CommentListView(generics.ListCreateAPIView):
         queryset = super().get_queryset()
         user = self.request.user
 
-        from django.db.models import OuterRef
         queryset = queryset.annotate(liked=Exists(Like.objects.filter(user=user, comment=OuterRef('pk'))))
         return queryset
