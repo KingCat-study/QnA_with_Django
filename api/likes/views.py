@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,27 +18,38 @@ class LikeToggleView(APIView):
         question_id = request.data.get('question_id')
         comment_id = request.data.get('comment_id')
 
+        error_response = self.validate_error(question_id, comment_id)
+        if error_response:
+            return error_response
+
+        object_id = question_id or comment_id
+        model = Question if question_id else Comment
+
         with transaction.atomic():
-            if question_id:
-                question = get_object_or_404(Question, id=question_id)
-                like, created = Like.objects.get_or_create(user=user, question=question)
-                if not created:
-                    like.delete()
-                    question.count_like -= 1
-                else:
-                    question.count_like += 1
-                question.save()
-                return Response({'liked': created, 'count_like': question.count_like},
-                                status=status.HTTP_200_OK)
-            elif comment_id:
-                comment = get_object_or_404(Comment, id=comment_id)
-                like, created = Like.objects.get_or_create(user=user, comment=comment)
-                if not created:
-                    like.delete()
-                    comment.count_like -= 1
-                else:
-                    comment.count_like += 1
-                comment.save()
-                return Response({'liked': created, 'count_like': comment.count_like},
-                                status=status.HTTP_200_OK)
-        return Response({'error': 'Invalid request'}, status=status.HTTP_400_BAD_REQUEST)
+            response_data = self.toggle_like(user, object_id, model)
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def toggle_like(self, user, object_id, model):
+        toggle_object = get_object_or_404(model, id=object_id)
+        like, created = Like.objects.get_or_create(user=user, **{model.__name__.lower(): toggle_object})
+
+        if not created:
+            like.delete()
+            toggle_object.count_like -= 1
+        else:
+            toggle_object.count_like += 1
+
+        toggle_object.save()
+
+        return {'liked': created, 'count_like': toggle_object.count_like}
+
+    def validate_error(self, question_id, comment_id):
+        if question_id and comment_id:
+            return Response({'error': 'Both question_id and comment_id provided'},
+                            status=status.HTTP_400_BAD_REQUEST)
+            # question_id와 comment_id 둘 다 존재하지 않는 경우
+        if not question_id and not comment_id:
+            return Response({'error': 'Neither question_id nor comment_id provided'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return None
